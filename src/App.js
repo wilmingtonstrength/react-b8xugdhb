@@ -26,8 +26,8 @@ const TESTS = {
     { id: 'vertical_jump', name: 'Vertical Jump', unit: 'inches', direction: 'higher' },
     { id: 'approach_jump', name: 'Approach Jump', unit: 'inches', direction: 'higher' },
     { id: 'rsi', name: 'RSI', unit: 'ratio', direction: 'higher' },
-    { id: 'sl_rsi_left', name: 'Single-Leg RSI Left', unit: 'ratio', direction: 'higher' },
-    { id: 'sl_rsi_right', name: 'Single-Leg RSI Right', unit: 'ratio', direction: 'higher' },
+    { id: 'sl_rsi_l', name: 'Single-Leg RSI Left', unit: 'ratio', direction: 'higher' },
+    { id: 'sl_rsi_r', name: 'Single-Leg RSI Right', unit: 'ratio', direction: 'higher' },
   ]},
   strength: { label: 'Strength', tests: [
     { id: 'back_squat', name: 'Back Squat', unit: 'lbs', direction: 'higher', allowKg: true },
@@ -80,7 +80,26 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const loadData = async () => { setLoading(true); const { data: ad } = await supabase.from('athletes').select('*').order('first_name'); const { data: rd } = await supabase.from('results').select('*'); if (ad) setAthletes(ad); if (rd) setResults(rd); setLoading(false); };
+  const loadData = async () => {
+    setLoading(true);
+    const { data: ad } = await supabase.from('athletes').select('*').order('first_name');
+    // Fetch ALL results in batches to avoid Supabase 1000-row default limit
+    let allResults = [];
+    let from = 0;
+    const step = 500;
+    while (true) {
+      const { data: batch } = await supabase.from('results').select('*').range(from, from + step - 1);
+      if (batch && batch.length > 0) {
+        allResults = [...allResults, ...batch];
+      }
+      if (!batch || batch.length < step) break;
+      from += step;
+    }
+    console.log('Total results loaded:', allResults.length);
+    if (ad) setAthletes(ad);
+    setResults(allResults);
+    setLoading(false);
+  };
   useEffect(() => { loadData(); }, []);
   const showNotification = (message, type = 'success') => { setNotification({ message, type }); setTimeout(() => setNotification(null), 4000); };
 
@@ -376,7 +395,6 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
   const saveAll = async () => {
     setSaving(true);
     const toSave = rows.filter(r => getJumpResult(r) !== null && !r.saved);
-    // Save reaches first
     for (const row of toSave) {
       const athlete = athletes.find(a => a.id === row.athleteId);
       const reachTotal = getReachTotal(row);
@@ -385,7 +403,6 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
         setAthletes(prev => prev.map(a => a.id === row.athleteId ? { ...a, standing_reach: reachTotal } : a));
       }
     }
-    // Save jump results
     const resultsToLog = toSave.map(row => ({ athleteId: row.athleteId, testId: 'approach_jump', testDate, rawValue: getJumpResult(row), convertedValue: getJumpResult(row), unit: 'inches' }));
     if (resultsToLog.length > 0) await logResults(resultsToLog);
     setRows(rows.map(r => ({ ...r, saved: getJumpResult(r) !== null ? true : r.saved })));
@@ -401,7 +418,6 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
       <h1 style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: 32, marginBottom: 8 }}>📏 Jump Calculator</h1>
       <p style={{ color: '#888', marginBottom: 24 }}>Calculate approach jumps for the whole class</p>
 
-      {/* Date & Add Athletes */}
       <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: 24, marginBottom: 24, border: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'end' }}>
           <div>
@@ -416,7 +432,6 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
         {rows.length > 0 && <div style={{ marginTop: 12, fontSize: 13, color: '#888' }}>{rows.length} athlete{rows.length !== 1 ? 's' : ''} added</div>}
       </div>
 
-      {/* Column Headers */}
       {rows.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '160px 140px 160px 100px 40px', gap: 8, padding: '0 12px', marginBottom: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 12, color: '#00d4ff', textTransform: 'uppercase', letterSpacing: 1 }}>Athlete</span>
@@ -427,7 +442,6 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
         </div>
       )}
 
-      {/* Athlete Rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
         {rows.map((row, index) => {
           const athlete = athletes.find(a => a.id === row.athleteId);
@@ -437,26 +451,22 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
           const isFirst = jumpResult !== null && currentPR === null;
           return (
             <div key={row.athleteId} style={{ display: 'grid', gridTemplateColumns: '160px 140px 160px 100px 40px', gap: 8, padding: 12, borderRadius: 10, alignItems: 'center', background: row.saved ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${row.saved ? 'rgba(0,255,136,0.2)' : (isNewPR || isFirst) && jumpResult ? 'rgba(255,215,0,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
-              {/* Name */}
               <div>
                 <div style={{ fontWeight: 600, fontSize: 14, color: '#e8e8e8' }}>{athlete?.first_name}</div>
                 <div style={{ fontSize: 11, color: '#666' }}>{athlete?.last_name}</div>
               </div>
-              {/* Reach */}
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                 <input type="number" min="0" max="10" placeholder="ft" value={row.reachFeet} onChange={(e) => updateRow(index, 'reachFeet', e.target.value)} style={{ width: 48, ...inputStyle, padding: '8px 4px', fontSize: 14 }} />
                 <span style={{ color: '#666', fontSize: 14 }}>'</span>
                 <input type="number" min="0" max="11.9" step="0.5" placeholder="in" value={row.reachInches} onChange={(e) => updateRow(index, 'reachInches', e.target.value)} style={{ width: 48, ...inputStyle, padding: '8px 4px', fontSize: 14 }} />
                 <span style={{ color: '#666', fontSize: 14 }}>"</span>
               </div>
-              {/* Touch */}
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                 <input type="number" min="0" max="12" placeholder="ft" value={row.touchFeet} onChange={(e) => updateRow(index, 'touchFeet', e.target.value)} style={{ width: 48, ...inputStyle, padding: '8px 6px' }} />
                 <span style={{ color: '#888', fontSize: 16 }}>'</span>
                 <input type="number" min="0" max="11.9" step="0.5" placeholder="in" value={row.touchInches} onChange={(e) => updateRow(index, 'touchInches', e.target.value)} style={{ width: 48, ...inputStyle, padding: '8px 6px' }} />
                 <span style={{ color: '#888', fontSize: 16 }}>"</span>
               </div>
-              {/* Result */}
               <div style={{ textAlign: 'center' }}>
                 {jumpResult !== null ? (
                   <div>
@@ -467,14 +477,12 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
                   </div>
                 ) : <span style={{ color: '#444' }}>—</span>}
               </div>
-              {/* Remove */}
               <button onClick={() => removeRow(index)} style={{ padding: '4px 8px', background: 'rgba(255,100,100,0.15)', border: 'none', borderRadius: 4, color: '#ff6666', cursor: 'pointer', fontSize: 14 }}>×</button>
             </div>
           );
         })}
       </div>
 
-      {/* Save All Button */}
       {readyCount > 0 && (
         <button onClick={saveAll} disabled={saving} style={{ width: '100%', padding: '20px 32px', background: saving ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg, #00ff88 0%, #00cc6a 100%)', border: 'none', borderRadius: 12, color: '#0a1628', fontSize: 20, fontWeight: 800, cursor: saving ? 'default' : 'pointer', textTransform: 'uppercase', letterSpacing: 2, boxShadow: saving ? 'none' : '0 4px 20px rgba(0,255,136,0.3)' }}>
           {saving ? 'Saving...' : `✓ Save ${readyCount} Result${readyCount !== 1 ? 's' : ''}`}
