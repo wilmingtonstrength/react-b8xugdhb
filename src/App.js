@@ -1,9 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://xxtomnbvinxuvnrrqnqb.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4dG9tbmJ2aW54dXZucnJxbnFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyMTk5MTksImV4cCI6MjA4NTc5NTkxOX0.Ty-KRgr9JsYr7ZEZtvm7lB2TxcdWeW1CCsJQdWyFND8';
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+/* ===================== HELPERS ===================== */
+
+// Format inches to feet'inches" display (e.g. 98 → 8'2")
+const formatFeetInches = (totalInches) => {
+  if (totalInches === null || totalInches === undefined || isNaN(totalInches)) return '-';
+  const ft = Math.floor(totalInches / 12);
+  const inches = Math.round(totalInches % 12);
+  // Handle case where rounding inches gives 12
+  if (inches === 12) return `${ft + 1}'0"`;
+  return `${ft}'${inches}"`;
+};
+
+// Tests that should display in feet+inches
+const FEET_INCHES_TESTS = ['broad_jump', 'vertical_jump', 'approach_jump'];
+const isFeetInchesTest = (testId) => FEET_INCHES_TESTS.includes(testId);
+
+// Format a test value for display, respecting feet+inches for jump tests
+const formatTestValue = (testId, value) => {
+  if (value === null || value === undefined) return '-';
+  if (isFeetInchesTest(testId)) return formatFeetInches(value);
+  return value;
+};
+
+// Prevent scroll wheel from changing number input values
+const preventScrollChange = (e) => { e.target.blur(); };
 
 const TESTS = {
   speed: { label: 'Speed & Acceleration', tests: [
@@ -80,6 +106,53 @@ function AthleteSearchPicker({ athletes, value, onChange, excludeIds = [], place
         {filtered.slice(0, 30).map((a, i) => (<div key={a.id} onClick={() => handleSelect(a)} onMouseEnter={() => setHighlightIndex(i)} style={{ padding: '10px 16px', cursor: 'pointer', background: i === highlightIndex ? 'rgba(0,212,255,0.2)' : 'transparent', color: '#fff', fontSize: 14, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{a.first_name} {a.last_name} {a.birthday && <span style={{ color: '#888', fontSize: 12 }}>• {calculateAge(a.birthday)} yrs</span>}</div>))}
         {filtered.length === 0 && <div style={{ padding: '10px 16px', color: '#666', fontSize: 14 }}>No athletes found</div>}
       </div>)}
+    </div>
+  );
+}
+
+/* ===================== FEET+INCHES INPUT COMPONENT ===================== */
+function FeetInchesInput({ value, onChange, style = {} }) {
+  // value is total inches (string or number), we split into feet and inches for display
+  const [feet, setFeet] = useState('');
+  const [inches, setInches] = useState('');
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!initialized && value !== '' && value !== undefined && value !== null) {
+      const total = parseFloat(value);
+      if (!isNaN(total)) {
+        setFeet(String(Math.floor(total / 12)));
+        setInches(String(parseFloat((total % 12).toFixed(1))));
+      }
+      setInitialized(true);
+    } else if (value === '' || value === undefined || value === null) {
+      if (initialized) {
+        setFeet('');
+        setInches('');
+      }
+    }
+  }, [value, initialized]);
+
+  const handleChange = (newFeet, newInches) => {
+    setFeet(newFeet);
+    setInches(newInches);
+    const f = newFeet !== '' ? parseInt(newFeet) : 0;
+    const i = newInches !== '' ? parseFloat(newInches) : 0;
+    if (newFeet === '' && newInches === '') {
+      onChange('');
+    } else {
+      onChange(String(f * 12 + i));
+    }
+  };
+
+  const inputStyle = { width: 44, padding: '8px 4px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: '#fff', fontSize: 14, textAlign: 'center', ...style };
+
+  return (
+    <div style={{ display: 'flex', gap: 2, alignItems: 'center', justifyContent: 'center' }}>
+      <input type="number" min="0" max="12" placeholder="ft" value={feet} onChange={(e) => handleChange(e.target.value, inches)} onWheel={preventScrollChange} style={inputStyle} />
+      <span style={{ color: '#666', fontSize: 14 }}>'</span>
+      <input type="number" min="0" max="11.9" step="0.5" placeholder="in" value={inches} onChange={(e) => handleChange(feet, e.target.value)} onWheel={preventScrollChange} style={inputStyle} />
+      <span style={{ color: '#666', fontSize: 14 }}>"</span>
     </div>
   );
 }
@@ -214,7 +287,15 @@ export default function App() {
         {page === 'jumpcalc' && <JumpCalcPage athletes={athletes} setAthletes={setAthletes} results={results} logResults={logResults} getPR={getPR} showNotification={showNotification} />}
         {page === 'recordboard' && <RecordBoardPage athletes={athletes} results={results} />}
       </main>
-      <style>{`* { box-sizing: border-box; } input, select, button { font-family: inherit; } input:focus, select:focus { outline: 2px solid #00d4ff; outline-offset: 2px; }`}</style>
+      <style>{`
+        * { box-sizing: border-box; }
+        input, select, button { font-family: inherit; }
+        input:focus, select:focus { outline: 2px solid #00d4ff; outline-offset: 2px; }
+        /* Hide number input spin buttons */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+      `}</style>
     </div>
   );
 }
@@ -278,7 +359,7 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
     setSubmittedResults(logged.map(r => {
       const a = getAthleteById(r.athlete_id);
       const t = getTestById(r.test_id);
-      return { athlete: (a ? a.first_name + ' ' + a.last_name : 'Unknown'), test: t ? t.name : r.test_id, value: r.converted_value, unit: t ? (t.displayUnit || t.unit) : '', isPR: r.is_pr };
+      return { athlete: (a ? a.first_name + ' ' + a.last_name : 'Unknown'), test: t ? t.name : r.test_id, value: r.converted_value, testId: r.test_id, unit: t ? (t.displayUnit || t.unit) : '', isPR: r.is_pr };
     }));
     setAthleteRows(athleteRows.map(row => {
       const values = {};
@@ -337,7 +418,7 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
                 <div style={{ minWidth: 140, fontSize: 12, color: '#00d4ff', textTransform: 'uppercase', letterSpacing: 1 }}>Athlete</div>
                 {selectedTests.map(tid => {
                   const t = getTestById(tid);
-                  return <div key={tid} style={{ minWidth: 100, flex: 1, fontSize: 11, color: '#00d4ff', textTransform: 'uppercase', letterSpacing: 1, textAlign: 'center' }}>{t ? t.name : tid}</div>;
+                  return <div key={tid} style={{ minWidth: isFeetInchesTest(tid) ? 130 : 100, flex: 1, fontSize: 11, color: '#00d4ff', textTransform: 'uppercase', letterSpacing: 1, textAlign: 'center' }}>{t ? t.name : tid}</div>;
                 })}
                 <div style={{ width: 32 }}></div>
               </div>
@@ -353,10 +434,18 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
                     {selectedTests.map(tid => {
                       const t = getTestById(tid);
                       const pr = getPR(row.athleteId, tid);
+                      const useFeetInches = isFeetInchesTest(tid);
                       return (
-                        <div key={tid} style={{ minWidth: 100, flex: 1 }}>
-                          <input type="number" step="0.01" placeholder={t ? t.unit : 'val'} value={row.values[tid] || ''} onChange={(e) => updateValue(rowIndex, tid, e.target.value)} style={{ width: '100%', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: '#fff', fontSize: 14, textAlign: 'center' }} />
-                          {pr !== null && <div style={{ fontSize: 10, color: '#666', textAlign: 'center', marginTop: 2 }}>PR: {pr}</div>}
+                        <div key={tid} style={{ minWidth: useFeetInches ? 130 : 100, flex: 1 }}>
+                          {useFeetInches ? (
+                            <FeetInchesInput
+                              value={row.values[tid]}
+                              onChange={(val) => updateValue(rowIndex, tid, val)}
+                            />
+                          ) : (
+                            <input type="number" step="0.01" placeholder={t ? t.unit : 'val'} value={row.values[tid] || ''} onChange={(e) => updateValue(rowIndex, tid, e.target.value)} onWheel={preventScrollChange} style={{ width: '100%', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: '#fff', fontSize: 14, textAlign: 'center' }} />
+                          )}
+                          {pr !== null && <div style={{ fontSize: 10, color: '#666', textAlign: 'center', marginTop: 2 }}>PR: {useFeetInches ? formatFeetInches(pr) : pr}</div>}
                         </div>
                       );
                     })}
@@ -380,7 +469,7 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
           {submittedResults.map((r, i) => (
             <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between' }}>
               <span><span style={{ fontWeight: 600 }}>{r.athlete}</span> — {r.test}</span>
-              <span>{r.value} {r.unit} {r.isPR && <span style={{ color: '#00ff88', fontWeight: 700 }}>🏆 NEW PR!</span>}</span>
+              <span>{isFeetInchesTest(r.testId) ? formatFeetInches(r.value) : r.value} {!isFeetInchesTest(r.testId) && r.unit} {r.isPR && <span style={{ color: '#00ff88', fontWeight: 700 }}>🏆 NEW PR!</span>}</span>
             </div>
           ))}
         </div>
@@ -506,7 +595,7 @@ function AthletesPage({ athletes, addAthlete, updateAthlete, deleteAthlete, resu
 }
 
 /* ===================== IMPROVED CHART ===================== */
-function SimpleChart({ data, direction }) {
+function SimpleChart({ data, direction, testId }) {
   if (!data || data.length === 0) return null;
   const values = data.map(d => d.value);
   const minVal = Math.min(...values);
@@ -529,6 +618,8 @@ function SimpleChart({ data, direction }) {
   const points = data.map((d, i) => ({ x: data.length === 1 ? width/2 : i * pointSpacing, y: getY(d.value), ...d }));
   const linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + ' ' + p.x + ' ' + p.y).join(' ');
   const bestValue = direction === 'lower' ? minVal : maxVal;
+  const useFtIn = isFeetInchesTest(testId);
+  const formatVal = (v) => useFtIn ? formatFeetInches(v) : v;
 
   return (
     <div style={{ padding: '20px 0' }}>
@@ -539,17 +630,17 @@ function SimpleChart({ data, direction }) {
           return (
             <g key={i}>
               <line x1={0} y1={y} x2={width} y2={y} stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-              <text x={-8} y={y + 4} fill="#888" fontSize="9" textAnchor="end">{Number.isInteger(val) ? val : val.toFixed(1)}</text>
+              <text x={-8} y={y + 4} fill="#888" fontSize="9" textAnchor="end">{useFtIn ? formatFeetInches(val) : (Number.isInteger(val) ? val : val.toFixed(1))}</text>
             </g>
           );
         })}
         <line x1={0} y1={getY(bestValue)} x2={width} y2={getY(bestValue)} stroke="#00ff88" strokeWidth="1.5" strokeDasharray="4,4" />
-        <text x={width + 3} y={getY(bestValue) + 4} fill="#00ff88" fontSize="9">{'PR: ' + bestValue}</text>
+        <text x={width + 3} y={getY(bestValue) + 4} fill="#00ff88" fontSize="9">{'PR: ' + formatVal(bestValue)}</text>
         <path d={linePath} fill="none" stroke="#00d4ff" strokeWidth="2.5" />
         {points.map((p, i) => (
           <g key={i}>
             <circle cx={p.x} cy={p.y} r={p.value === bestValue ? 7 : 5} fill={p.value === bestValue ? '#00ff88' : '#00d4ff'} />
-            <text x={p.x} y={p.y - 12} fill={p.value === bestValue ? '#00ff88' : '#fff'} fontSize="10" fontWeight="700" textAnchor="middle">{p.value}</text>
+            <text x={p.x} y={p.y - 12} fill={p.value === bestValue ? '#00ff88' : '#fff'} fontSize="10" fontWeight="700" textAnchor="middle">{formatVal(p.value)}</text>
             <text x={p.x} y={height + 18} fill="#888" fontSize="8" textAnchor="middle">{p.date}</text>
           </g>
         ))}
@@ -597,10 +688,11 @@ function DashboardPage({ athletes, results, getPR }) {
                 <h4 style={{ color: '#00d4ff', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>{c.label}</h4>
                 {c.tests.map(t => {
                   const pr = getPR(athlete.id, t.id);
+                  const useFtIn = isFeetInchesTest(t.id);
                   return (
                     <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 14 }}>
                       <span style={{ color: '#aaa' }}>{t.name}</span>
-                      <span style={{ fontWeight: 600, color: pr !== null ? '#00ff88' : '#555' }}>{pr !== null ? (pr + ' ' + (t.displayUnit||t.unit)) : '-'}</span>
+                      <span style={{ fontWeight: 600, color: pr !== null ? '#00ff88' : '#555' }}>{pr !== null ? (useFtIn ? formatFeetInches(pr) : (pr + ' ' + (t.displayUnit||t.unit))) : '-'}</span>
                     </div>
                   );
                 })}
@@ -613,9 +705,9 @@ function DashboardPage({ athletes, results, getPR }) {
         <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: 24, border: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
             <h2 style={{ margin: 0, fontSize: 20 }}>{test ? test.name : ''} Progress</h2>
-            {currentPR && <div style={{ padding: '8px 16px', background: 'rgba(0,255,136,0.2)', borderRadius: 8, color: '#00ff88', fontWeight: 700 }}>{'🏆 PR: ' + currentPR + ' ' + (test ? (test.displayUnit||test.unit) : '')}</div>}
+            {currentPR && <div style={{ padding: '8px 16px', background: 'rgba(0,255,136,0.2)', borderRadius: 8, color: '#00ff88', fontWeight: 700 }}>{'🏆 PR: ' + (isFeetInchesTest(selectedTest) ? formatFeetInches(currentPR) : (currentPR + ' ' + (test ? (test.displayUnit||test.unit) : '')))}</div>}
           </div>
-          <SimpleChart data={testResults} direction={test ? test.direction : 'higher'} />
+          <SimpleChart data={testResults} direction={test ? test.direction : 'higher'} testId={selectedTest} />
           <div style={{ marginTop: 16, fontSize: 13, color: '#888' }}>
             {testResults.length + ' test' + (testResults.length!==1?'s':'') + ' recorded'}
             {test && test.direction === 'lower' && ' • Lower is better'}
@@ -675,6 +767,7 @@ function RecordsPage({ athletes, results, getAthleteById }) {
               const a = getAthleteById(r.athlete_id);
               const age = a ? calculateAge(a.birthday) : null;
               const medals = ['🥇', '🥈', '🥉', '4th', '5th'];
+              const useFtIn = isFeetInchesTest(selectedTest);
               return (
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)', background: i === 0 ? 'rgba(255,215,0,0.1)' : 'transparent' }}>
                   <div style={{ width: 50, fontSize: i < 3 ? 28 : 18, fontWeight: 700, color: i < 3 ? '#fff' : '#888' }}>{medals[i]}</div>
@@ -682,7 +775,7 @@ function RecordsPage({ athletes, results, getAthleteById }) {
                     <div style={{ fontWeight: 600, fontSize: 16 }}>{a ? `${a.first_name} ${a.last_name}` : 'Unknown'}</div>
                     <div style={{ color: '#888', fontSize: 13 }}>{age && `${age} yrs • `}{a?.gender}{' • '}{new Date(r.test_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                   </div>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: i === 0 ? '#ffd700' : '#00ff88' }}>{r.converted_value} <span style={{ fontSize: 14, fontWeight: 500, color: '#888' }}>{test?.displayUnit || test?.unit}</span></div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: i === 0 ? '#ffd700' : '#00ff88' }}>{useFtIn ? formatFeetInches(parseFloat(r.converted_value)) : r.converted_value} <span style={{ fontSize: 14, fontWeight: 500, color: '#888' }}>{!useFtIn && (test?.displayUnit || test?.unit)}</span></div>
                 </div>
               );
             })}</div>
@@ -734,6 +827,7 @@ function RecentPRsPage({ athletes, results, getAthleteById }) {
             const t = getTestById(r.test_id);
             const age = a ? calculateAge(a.birthday) : null;
             const dateStr = new Date(r.test_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            const useFtIn = isFeetInchesTest(r.test_id);
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 16 }}>
                 <div style={{ fontSize: 24 }}>🏆</div>
@@ -741,7 +835,7 @@ function RecentPRsPage({ athletes, results, getAthleteById }) {
                   <div style={{ fontWeight: 600, fontSize: 16 }}>{a ? `${a.first_name} ${a.last_name}` : 'Unknown'}</div>
                   <div style={{ color: '#888', fontSize: 13 }}>{age && `${age} yrs • `}{t?.name} • {dateStr}</div>
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#00ff88' }}>{r.converted_value} <span style={{ fontSize: 13, fontWeight: 500, color: '#888' }}>{t?.displayUnit || t?.unit}</span></div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#00ff88' }}>{useFtIn ? formatFeetInches(parseFloat(r.converted_value)) : r.converted_value} <span style={{ fontSize: 13, fontWeight: 500, color: '#888' }}>{!useFtIn && (t?.displayUnit || t?.unit)}</span></div>
               </div>
             );
           })}
@@ -781,13 +875,15 @@ function ManagePage({ athletes, results, getAthleteById, deleteResult, updateRes
           {sortedResults.map(r => {
             const test = getTestById(r.test_id);
             const isEd = editingResult === r.id;
+            const useFtIn = isFeetInchesTest(r.test_id);
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 12, flexWrap: 'wrap' }}>
                 {isEd ? (
                   <>
                     <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(0,212,255,0.5)', borderRadius: 6, color: '#fff', fontSize: 14 }} />
                     <span style={{ color: '#00d4ff', fontSize: 14, fontWeight: 600 }}>{test?.name || r.test_id}</span>
-                    <input type="number" step="0.01" value={editValue} onChange={(e) => setEditValue(e.target.value)} style={{ width: 100, padding: '8px 12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(0,212,255,0.5)', borderRadius: 6, color: '#fff', fontSize: 14 }} />
+                    <input type="number" step="0.01" value={editValue} onChange={(e) => setEditValue(e.target.value)} onWheel={preventScrollChange} style={{ width: 100, padding: '8px 12px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(0,212,255,0.5)', borderRadius: 6, color: '#fff', fontSize: 14 }} />
+                    {useFtIn && editValue && <span style={{ color: '#888', fontSize: 12 }}>= {formatFeetInches(parseFloat(editValue))}</span>}
                     <button onClick={() => handleSaveEdit(r)} style={{ padding: '6px 12px', background: 'rgba(0,255,136,0.3)', border: 'none', borderRadius: 4, color: '#00ff88', cursor: 'pointer', fontSize: 12 }}>Save</button>
                     <button onClick={() => setEditingResult(null)} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 4, color: '#aaa', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
                   </>
@@ -795,7 +891,7 @@ function ManagePage({ athletes, results, getAthleteById, deleteResult, updateRes
                   <>
                     <div style={{ width: 100, fontSize: 13, color: '#888' }}>{new Date(r.test_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                     <div style={{ flex: 1, color: '#00d4ff', fontSize: 14, fontWeight: 600 }}>{test?.name || r.test_id}</div>
-                    <div style={{ fontWeight: 700, color: r.is_pr ? '#ffd700' : '#00ff88' }}>{r.converted_value} <span style={{ fontSize: 12, color: '#888' }}>{test?.displayUnit || test?.unit}</span> {r.is_pr && '🏆'}</div>
+                    <div style={{ fontWeight: 700, color: r.is_pr ? '#ffd700' : '#00ff88' }}>{useFtIn ? formatFeetInches(parseFloat(r.converted_value)) : r.converted_value} <span style={{ fontSize: 12, color: '#888' }}>{!useFtIn && (test?.displayUnit || test?.unit)}</span> {r.is_pr && '🏆'}</div>
                     <button onClick={() => handleEdit(r)} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 4, color: '#aaa', cursor: 'pointer', fontSize: 12 }}>Edit</button>
                     <button onClick={() => { if (window.confirm('Delete this result?')) deleteResult(r.id); }} style={{ padding: '6px 12px', background: 'rgba(255,100,100,0.2)', border: 'none', borderRadius: 4, color: '#ff6666', cursor: 'pointer', fontSize: 12 }}>Delete</button>
                   </>
@@ -878,15 +974,15 @@ function JumpCalcPage({ athletes, setAthletes, results, logResults, getPR, showN
             <div key={row.athleteId} style={{ display: 'grid', gridTemplateColumns: '160px 140px 160px 100px 40px', gap: 8, padding: 12, borderRadius: 10, alignItems: 'center', background: row.saved ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${row.saved ? 'rgba(0,255,136,0.2)' : (isNewPR || isFirst) && jumpResult ? 'rgba(255,215,0,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
               <div><div style={{ fontWeight: 600, fontSize: 14, color: '#e8e8e8' }}>{athlete?.first_name}</div><div style={{ fontSize: 11, color: '#666' }}>{athlete?.last_name}</div></div>
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                <input type="number" min="0" max="10" placeholder="ft" value={row.reachFeet} onChange={(e) => updateRow(index, 'reachFeet', e.target.value)} style={{ width: 48, ...iStyle, padding: '8px 4px', fontSize: 14 }} />
+                <input type="number" min="0" max="10" placeholder="ft" value={row.reachFeet} onChange={(e) => updateRow(index, 'reachFeet', e.target.value)} onWheel={preventScrollChange} style={{ width: 48, ...iStyle, padding: '8px 4px', fontSize: 14 }} />
                 <span style={{ color: '#666', fontSize: 14 }}>'</span>
-                <input type="number" min="0" max="11.9" step="0.5" placeholder="in" value={row.reachInches} onChange={(e) => updateRow(index, 'reachInches', e.target.value)} style={{ width: 48, ...iStyle, padding: '8px 4px', fontSize: 14 }} />
+                <input type="number" min="0" max="11.9" step="0.5" placeholder="in" value={row.reachInches} onChange={(e) => updateRow(index, 'reachInches', e.target.value)} onWheel={preventScrollChange} style={{ width: 48, ...iStyle, padding: '8px 4px', fontSize: 14 }} />
                 <span style={{ color: '#666', fontSize: 14 }}>"</span>
               </div>
               <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                <input type="number" min="0" max="12" placeholder="ft" value={row.touchFeet} onChange={(e) => updateRow(index, 'touchFeet', e.target.value)} style={{ width: 48, ...iStyle, padding: '8px 6px' }} />
+                <input type="number" min="0" max="12" placeholder="ft" value={row.touchFeet} onChange={(e) => updateRow(index, 'touchFeet', e.target.value)} onWheel={preventScrollChange} style={{ width: 48, ...iStyle, padding: '8px 6px' }} />
                 <span style={{ color: '#888', fontSize: 16 }}>'</span>
-                <input type="number" min="0" max="11.9" step="0.5" placeholder="in" value={row.touchInches} onChange={(e) => updateRow(index, 'touchInches', e.target.value)} style={{ width: 48, ...iStyle, padding: '8px 6px' }} />
+                <input type="number" min="0" max="11.9" step="0.5" placeholder="in" value={row.touchInches} onChange={(e) => updateRow(index, 'touchInches', e.target.value)} onWheel={preventScrollChange} style={{ width: 48, ...iStyle, padding: '8px 6px' }} />
                 <span style={{ color: '#888', fontSize: 16 }}>"</span>
               </div>
               <div style={{ textAlign: 'center' }}>
@@ -925,9 +1021,9 @@ function RecordBoardPage({ athletes, results }) {
     { id: 'max_velocity', name: 'Max Velocity', unit: 'MPH', direction: 'higher', format: v => v.toFixed(1) },
     { id: '5_10_fly', name: '5-10 Fly', unit: 'sec', direction: 'lower', format: v => v.toFixed(2) },
     { id: '5_0_5', name: '5-0-5', unit: 'sec', direction: 'lower', format: v => v.toFixed(2) },
-    { id: 'broad_jump', name: 'Broad Jump', unit: 'in', direction: 'higher', format: v => `${Math.floor(v/12)}'${Math.round(v%12)}"` },
-    { id: 'vertical_jump', name: 'Vertical', unit: 'in', direction: 'higher', format: v => v.toFixed(1) },
-    { id: 'approach_jump', name: 'Approach', unit: 'in', direction: 'higher', format: v => v.toFixed(1) },
+    { id: 'broad_jump', name: 'Broad Jump', unit: '', direction: 'higher', format: v => formatFeetInches(v) },
+    { id: 'vertical_jump', name: 'Vertical', unit: '', direction: 'higher', format: v => formatFeetInches(v) },
+    { id: 'approach_jump', name: 'Approach', unit: '', direction: 'higher', format: v => formatFeetInches(v) },
     { id: 'rsi', name: 'RSI', unit: '', direction: 'higher', format: v => v.toFixed(2) },
   ];
 
@@ -941,7 +1037,7 @@ function RecordBoardPage({ athletes, results }) {
     { id: 'chin_up', name: 'Chin-Up', unit: 'reps', direction: 'higher', format: v => Math.round(v) },
   ];
 
-  const EXCLUDED = ['matt secrest'];
+  const EXCLUDED = ['matt seacrest'];
 
   const getAgeAtTest = (birthday, testDate) => {
     if (!birthday || !testDate) return null;
