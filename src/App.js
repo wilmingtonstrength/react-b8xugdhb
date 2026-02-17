@@ -250,7 +250,7 @@ export default function App() {
     { id: 'entry', label: 'Test Entry' },
     { id: 'athletes', label: 'Athletes' },
     { id: 'dashboard', label: 'Dashboard' },
-    { id: 'records', label: 'Records' },
+
     { id: 'recentprs', label: '🔥 Recent PRs' },
     { id: 'manage', label: '⚙️ Manage' },
     { id: 'jumpcalc', label: '📏 Jump Calc' },
@@ -281,7 +281,7 @@ export default function App() {
         {page === 'entry' && <TestEntryPage athletes={athletes} logResults={logResults} getPR={getPR} getAthleteById={getAthleteById} />}
         {page === 'athletes' && <AthletesPage athletes={athletes} addAthlete={addAthlete} updateAthlete={updateAthlete} deleteAthlete={deleteAthlete} results={results} />}
         {page === 'dashboard' && <DashboardPage athletes={athletes} results={results} getPR={getPR} />}
-        {page === 'records' && <RecordsPage athletes={athletes} results={results} getAthleteById={getAthleteById} />}
+
         {page === 'recentprs' && <RecentPRsPage athletes={athletes} results={results} getAthleteById={getAthleteById} />}
         {page === 'manage' && <ManagePage athletes={athletes} results={results} getAthleteById={getAthleteById} deleteResult={deleteResult} updateResult={updateResult} />}
         {page === 'jumpcalc' && <JumpCalcPage athletes={athletes} setAthletes={setAthletes} results={results} logResults={logResults} getPR={getPR} showNotification={showNotification} />}
@@ -720,73 +720,6 @@ function DashboardPage({ athletes, results, getPR }) {
   );
 }
 
-/* ===================== RECORDS ===================== */
-function RecordsPage({ athletes, results, getAthleteById }) {
-  const [selectedTest, setSelectedTest] = useState('');
-  const [ageGroup, setAgeGroup] = useState('all');
-  const [gender, setGender] = useState('all');
-  const test = selectedTest ? getTestById(selectedTest) : null;
-  const iStyle = { width: '100%', padding: '12px 16px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: '#fff', fontSize: 16 };
-  const getTopFive = () => {
-    if (!selectedTest) return [];
-    const bests = {};
-    results.filter(r => r.test_id === selectedTest).forEach(r => {
-      const a = getAthleteById(r.athlete_id);
-      if (!a) return;
-      if (gender !== 'all' && a.gender !== gender) return;
-      const age = calculateAge(a.birthday);
-      if (ageGroup === '13under' && (!age || age > 13)) return;
-      if (ageGroup === '14up' && (!age || age < 14)) return;
-      const c = bests[r.athlete_id];
-      if (!c) bests[r.athlete_id] = r;
-      else if (test.direction === 'higher' && r.converted_value > c.converted_value) bests[r.athlete_id] = r;
-      else if (test.direction === 'lower' && r.converted_value < c.converted_value) bests[r.athlete_id] = r;
-    });
-    return Object.values(bests).sort((a, b) => test.direction === 'higher' ? b.converted_value - a.converted_value : a.converted_value - b.converted_value).slice(0, 5);
-  };
-  const topFive = getTopFive();
-  return (
-    <div>
-      <h1 style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: 32, marginBottom: 8 }}>🏆 Records</h1>
-      <p style={{ color: '#888', marginBottom: 32 }}>Top 5 performances by test, age group, and gender</p>
-      <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: 24, marginBottom: 24, border: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-          <div><label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>Test</label><select value={selectedTest} onChange={(e) => setSelectedTest(e.target.value)} style={iStyle}><option value="">Select a test...</option>{Object.entries(TESTS).map(([k, c]) => (<optgroup key={k} label={c.label}>{c.tests.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}</optgroup>))}</select></div>
-          <div><label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>Age Group</label><select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} style={iStyle}><option value="all">All Ages</option><option value="13under">13 & Under</option><option value="14up">14 & Up</option></select></div>
-          <div><label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>Gender</label><select value={gender} onChange={(e) => setGender(e.target.value)} style={iStyle}><option value="all">All</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
-        </div>
-      </div>
-      {selectedTest && (
-        <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-          <div style={{ background: 'linear-gradient(135deg, rgba(0,212,255,0.2) 0%, rgba(0,153,204,0.2) 100%)', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-            <h2 style={{ margin: 0, fontSize: 20 }}>Top 5 - {test?.name}{ageGroup !== 'all' && ` (${ageGroup === '13under' ? '13 & Under' : '14 & Up'})`}{gender !== 'all' && ` - ${gender}`}</h2>
-            <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: 14 }}>{test?.direction === 'lower' ? 'Fastest times' : 'Best results'}</p>
-          </div>
-          {topFive.length > 0 ? (
-            <div>{topFive.map((r, i) => {
-              const a = getAthleteById(r.athlete_id);
-              const age = a ? calculateAge(a.birthday) : null;
-              const medals = ['🥇', '🥈', '🥉', '4th', '5th'];
-              const useFtIn = isFeetInchesTest(selectedTest);
-              return (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)', background: i === 0 ? 'rgba(255,215,0,0.1)' : 'transparent' }}>
-                  <div style={{ width: 50, fontSize: i < 3 ? 28 : 18, fontWeight: 700, color: i < 3 ? '#fff' : '#888' }}>{medals[i]}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 16 }}>{a ? `${a.first_name} ${a.last_name}` : 'Unknown'}</div>
-                    <div style={{ color: '#888', fontSize: 13 }}>{age && `${age} yrs • `}{a?.gender}{' • '}{new Date(r.test_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                  </div>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: i === 0 ? '#ffd700' : '#00ff88' }}>{useFtIn ? formatFeetInches(parseFloat(r.converted_value)) : r.converted_value} <span style={{ fontSize: 14, fontWeight: 500, color: '#888' }}>{!useFtIn && (test?.displayUnit || test?.unit)}</span></div>
-                </div>
-              );
-            })}</div>
-          ) : <div style={{ padding: 48, textAlign: 'center', color: '#666' }}>No results found for this filter combination.</div>}
-        </div>
-      )}
-      {!selectedTest && <div style={{ textAlign: 'center', padding: 48, color: '#666' }}><p style={{ fontSize: 18 }}>Select a test above to view the leaderboard.</p></div>}
-    </div>
-  );
-}
-
 /* ===================== RECENT PRS PAGE ===================== */
 function RecentPRsPage({ athletes, results, getAthleteById }) {
   const [timeFrame, setTimeFrame] = useState('week');
@@ -1037,7 +970,7 @@ function RecordBoardPage({ athletes, results }) {
     { id: 'chin_up', name: 'Chin-Up', unit: 'reps', direction: 'higher', format: v => Math.round(v) },
   ];
 
-  const EXCLUDED = ['matt seacrest'];
+  const EXCLUDED = ['matt secrest'];
 
   const getAgeAtTest = (birthday, testDate) => {
     if (!birthday || !testDate) return null;
@@ -1060,7 +993,7 @@ function RecordBoardPage({ athletes, results }) {
         if (r.test_id !== test.id) return;
         const a = athleteMap[r.athlete_id];
         if (!a) return;
-        const fullName = `${a.first_name} ${a.last_name}`.toLowerCase();
+        const fullName = `${(a.first_name || '').trim()} ${(a.last_name || '').trim()}`.toLowerCase();
         if (EXCLUDED.includes(fullName)) return;
         const g = (a.gender || '').toLowerCase();
         const isMatch = gender === 'boys' ? g !== 'female' : g === 'female';
