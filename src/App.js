@@ -7,28 +7,23 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 /* ===================== HELPERS ===================== */
 
-// Format inches to feet'inches" display (e.g. 98 → 8'2")
 const formatFeetInches = (totalInches) => {
   if (totalInches === null || totalInches === undefined || isNaN(totalInches)) return '-';
   const ft = Math.floor(totalInches / 12);
   const inches = Math.round(totalInches % 12);
-  // Handle case where rounding inches gives 12
   if (inches === 12) return `${ft + 1}'0"`;
   return `${ft}'${inches}"`;
 };
 
-// Tests that should display in feet+inches
-const FEET_INCHES_TESTS = ['broad_jump', 'vertical_jump', 'approach_jump'];
+const FEET_INCHES_TESTS = ['broad_jump'];
 const isFeetInchesTest = (testId) => FEET_INCHES_TESTS.includes(testId);
 
-// Format a test value for display, respecting feet+inches for jump tests
 const formatTestValue = (testId, value) => {
   if (value === null || value === undefined) return '-';
   if (isFeetInchesTest(testId)) return formatFeetInches(value);
   return value;
 };
 
-// Prevent scroll wheel from changing number input values
 const preventScrollChange = (e) => { e.target.blur(); };
 
 const TESTS = {
@@ -112,7 +107,6 @@ function AthleteSearchPicker({ athletes, value, onChange, excludeIds = [], place
 
 /* ===================== FEET+INCHES INPUT COMPONENT ===================== */
 function FeetInchesInput({ value, onChange, style = {} }) {
-  // value is total inches (string or number), we split into feet and inches for display
   const [feet, setFeet] = useState('');
   const [inches, setInches] = useState('');
   const [initialized, setInitialized] = useState(false);
@@ -250,7 +244,6 @@ export default function App() {
     { id: 'entry', label: 'Test Entry' },
     { id: 'athletes', label: 'Athletes' },
     { id: 'dashboard', label: 'Dashboard' },
-
     { id: 'recentprs', label: '🔥 Recent PRs' },
     { id: 'manage', label: '⚙️ Manage' },
     { id: 'jumpcalc', label: '📏 Jump Calc' },
@@ -281,7 +274,6 @@ export default function App() {
         {page === 'entry' && <TestEntryPage athletes={athletes} logResults={logResults} getPR={getPR} getAthleteById={getAthleteById} />}
         {page === 'athletes' && <AthletesPage athletes={athletes} addAthlete={addAthlete} updateAthlete={updateAthlete} deleteAthlete={deleteAthlete} results={results} />}
         {page === 'dashboard' && <DashboardPage athletes={athletes} results={results} getPR={getPR} />}
-
         {page === 'recentprs' && <RecentPRsPage athletes={athletes} results={results} getAthleteById={getAthleteById} />}
         {page === 'manage' && <ManagePage athletes={athletes} results={results} getAthleteById={getAthleteById} deleteResult={deleteResult} updateResult={updateResult} />}
         {page === 'jumpcalc' && <JumpCalcPage athletes={athletes} setAthletes={setAthletes} results={results} logResults={logResults} getPR={getPR} showNotification={showNotification} />}
@@ -291,7 +283,6 @@ export default function App() {
         * { box-sizing: border-box; }
         input, select, button { font-family: inherit; }
         input:focus, select:focus { outline: 2px solid #00d4ff; outline-offset: 2px; }
-        /* Hide number input spin buttons */
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; appearance: textfield; }
@@ -438,10 +429,7 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
                       return (
                         <div key={tid} style={{ minWidth: useFeetInches ? 130 : 100, flex: 1 }}>
                           {useFeetInches ? (
-                            <FeetInchesInput
-                              value={row.values[tid]}
-                              onChange={(val) => updateValue(rowIndex, tid, val)}
-                            />
+                            <FeetInchesInput value={row.values[tid]} onChange={(val) => updateValue(rowIndex, tid, val)} />
                           ) : (
                             <input type="number" step="0.01" placeholder={t ? t.unit : 'val'} value={row.values[tid] || ''} onChange={(e) => updateValue(rowIndex, tid, e.target.value)} onWheel={preventScrollChange} style={{ width: '100%', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: '#fff', fontSize: 14, textAlign: 'center' }} />
                           )}
@@ -724,12 +712,19 @@ function DashboardPage({ athletes, results, getPR }) {
 function RecentPRsPage({ athletes, results, getAthleteById }) {
   const [timeFrame, setTimeFrame] = useState('week');
   const [filterTest, setFilterTest] = useState('');
+  const [filterAthlete, setFilterAthlete] = useState(null);
   const now = new Date();
   const cutoff = new Date(now);
   if (timeFrame === 'week') cutoff.setDate(cutoff.getDate() - 7);
-  else cutoff.setDate(cutoff.getDate() - 30);
-  const recentPRs = results.filter(r => r.is_pr && new Date(r.test_date) >= cutoff).filter(r => !filterTest || r.test_id === filterTest).sort((a, b) => new Date(b.test_date) - new Date(a.test_date));
+  else if (timeFrame === 'month') cutoff.setDate(cutoff.getDate() - 30);
+  else cutoff.setDate(cutoff.getDate() - 90);
+  const recentPRs = results
+    .filter(r => r.is_pr && new Date(r.test_date) >= cutoff)
+    .filter(r => !filterTest || r.test_id === filterTest)
+    .filter(r => !filterAthlete || r.athlete_id === filterAthlete)
+    .sort((a, b) => new Date(b.test_date) - new Date(a.test_date));
   const iStyle = { padding: '12px 16px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: '#fff', fontSize: 16 };
+  const timeLabels = { week: '1 Week', month: '1 Month', quarter: '3 Months' };
   return (
     <div>
       <h1 style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: 32, marginBottom: 8 }}>🔥 Recent PRs</h1>
@@ -738,9 +733,14 @@ function RecentPRsPage({ athletes, results, getAthleteById }) {
         <div>
           <label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>Time Frame</label>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setTimeFrame('week')} style={{ padding: '12px 24px', background: timeFrame === 'week' ? 'linear-gradient(135deg, #00d4ff 0%, #0099cc 100%)' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 8, color: timeFrame === 'week' ? '#0a1628' : '#aaa', fontWeight: timeFrame === 'week' ? 700 : 400, cursor: 'pointer', fontSize: 14 }}>Last 7 Days</button>
-            <button onClick={() => setTimeFrame('month')} style={{ padding: '12px 24px', background: timeFrame === 'month' ? 'linear-gradient(135deg, #00d4ff 0%, #0099cc 100%)' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 8, color: timeFrame === 'month' ? '#0a1628' : '#aaa', fontWeight: timeFrame === 'month' ? 700 : 400, cursor: 'pointer', fontSize: 14 }}>Last 30 Days</button>
+            {['week', 'month', 'quarter'].map(tf => (
+              <button key={tf} onClick={() => setTimeFrame(tf)} style={{ padding: '12px 24px', background: timeFrame === tf ? 'linear-gradient(135deg, #00d4ff 0%, #0099cc 100%)' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: 8, color: timeFrame === tf ? '#0a1628' : '#aaa', fontWeight: timeFrame === tf ? 700 : 400, cursor: 'pointer', fontSize: 14 }}>{timeLabels[tf]}</button>
+            ))}
           </div>
+        </div>
+        <div style={{ flex: '1 1 200px', maxWidth: 300 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>Filter by Athlete</label>
+          <AthleteSearchPicker athletes={athletes} value={filterAthlete} onChange={(id) => setFilterAthlete(id)} placeholder="All athletes..." />
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>Filter by Test</label>
@@ -775,7 +775,7 @@ function RecentPRsPage({ athletes, results, getAthleteById }) {
         </div>
       ) : (
         <div style={{ textAlign: 'center', padding: 48, color: '#666' }}>
-          <p style={{ fontSize: 18 }}>No PRs in the {timeFrame === 'week' ? 'last 7 days' : 'last 30 days'}{filterTest ? ` for ${getTestById(filterTest)?.name}` : ''}.</p>
+          <p style={{ fontSize: 18 }}>No PRs in the {timeFrame === 'week' ? 'last 7 days' : timeFrame === 'month' ? 'last 30 days' : 'last 3 months'}{filterTest ? ` for ${getTestById(filterTest)?.name}` : ''}{filterAthlete ? ` for ${(() => { const a = getAthleteById(filterAthlete); return a ? `${a.first_name} ${a.last_name}` : ''; })()}` : ''}.</p>
         </div>
       )}
     </div>
@@ -1005,7 +1005,6 @@ function RecordBoardPage({ athletes, results }) {
         const isMSAge = age !== null && age < 15;
         const entry = { name: `${a.first_name} ${(a.last_name || '').charAt(0)}`, value: val };
 
-        // Everyone goes on HS (15+) board, only 14 & under also on MS board
         records[test.id]['hs'].push(entry);
         if (isMSAge) records[test.id]['ms'].push(entry);
       });
@@ -1035,7 +1034,7 @@ function RecordBoardPage({ athletes, results }) {
   const renderTestCard = (test, records, isTv) => {
     const hs = records[test.id]?.hs || [];
     const ms = records[test.id]?.ms || [];
-    const cardBg = isTv ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.03)';
+    const cardBg = 'rgba(255,255,255,0.03)';
     const cardBorder = isTv ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(255,255,255,0.1)';
 
     const renderRows = (list) => list.length > 0 ? list.map((r, i) => (
@@ -1056,7 +1055,6 @@ function RecordBoardPage({ athletes, results }) {
     );
   };
 
-  // TV MODE
   if (tvMode) {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#0a1628', zIndex: 9999, padding: 20, overflow: 'auto' }}>
@@ -1081,7 +1079,6 @@ function RecordBoardPage({ athletes, results }) {
     );
   }
 
-  // NORMAL IN-APP VIEW
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
