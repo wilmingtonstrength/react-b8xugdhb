@@ -299,6 +299,7 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
   const [athleteRows, setAthleteRows] = useState([]);
   const [submittedResults, setSubmittedResults] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
 
   const anyStrength = selectedTests.some(tid => { const t = getTestById(tid); return t && t.allowKg; });
 
@@ -329,6 +330,13 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
 
   const usedAthleteIds = athleteRows.map(r => r.athleteId);
 
+  // FIX 2: Reset for next group
+  const startNextGroup = () => {
+    setAthleteRows([]);
+    setSubmittedResults([]);
+    setShowSummary(false);
+  };
+
   const handleSubmit = async () => {
     if (selectedTests.length === 0 || !testDate) { alert('Please select at least one test and a date'); return; }
     const toLog = [];
@@ -339,28 +347,91 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
         const test = getTestById(testId);
         let raw = parseFloat(val);
         let cv = raw;
-        if (test.allowKg && useKg) cv = Math.round(raw * 2.205 * 10) / 10;
+        // FIX 1: If entering in kg, convert to lbs (stored as lbs always, displayed as lbs everywhere)
+        if (test.allowKg && useKg) {
+          cv = Math.round(raw * 2.205); // convert kg -> lbs, round to nearest whole number
+        }
         if (test.convert) cv = parseFloat(test.convert(raw));
-        toLog.push({ athleteId: row.athleteId, testId, testDate, rawValue: raw, convertedValue: cv, unit: test.allowKg && useKg ? 'kg' : test.unit });
+        toLog.push({
+          athleteId: row.athleteId,
+          testId,
+          testDate,
+          rawValue: raw,
+          convertedValue: cv,
+          // always store as lbs internally — unit field just records what was entered
+          unit: test.allowKg && useKg ? 'kg' : test.unit
+        });
       });
     });
     if (toLog.length === 0) { alert('Please enter at least one value'); return; }
     setSubmitting(true);
     const logged = await logResults(toLog);
-    setSubmittedResults(logged.map(r => {
+    const summary = logged.map(r => {
       const a = getAthleteById(r.athlete_id);
       const t = getTestById(r.test_id);
-      return { athlete: (a ? a.first_name + ' ' + a.last_name : 'Unknown'), test: t ? t.name : r.test_id, value: r.converted_value, testId: r.test_id, unit: t ? (t.displayUnit || t.unit) : '', isPR: r.is_pr };
-    }));
-    setAthleteRows(athleteRows.map(row => {
-      const values = {};
-      selectedTests.forEach(tid => { values[tid] = ''; });
-      return { ...row, values };
-    }));
+      return {
+        athlete: (a ? a.first_name + ' ' + a.last_name : 'Unknown'),
+        test: t ? t.name : r.test_id,
+        // FIX 1: always show converted_value (lbs) in summary
+        value: r.converted_value,
+        testId: r.test_id,
+        unit: t ? (t.displayUnit || t.unit) : '',
+        isPR: r.is_pr
+      };
+    });
+    setSubmittedResults(summary);
+    setShowSummary(true);
     setSubmitting(false);
   };
 
   const iStyle = { padding: '12px 16px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, color: '#fff', fontSize: 16 };
+
+  // FIX 2: Show PR summary screen after submit
+  if (showSummary) {
+    const prResults = submittedResults.filter(r => r.isPR);
+    const nonPRResults = submittedResults.filter(r => !r.isPR);
+    return (
+      <div>
+        <h1 style={{ fontFamily: "'Archivo Black', sans-serif", fontSize: 32, marginBottom: 8 }}>Results Logged ✓</h1>
+        <p style={{ color: '#888', marginBottom: 24 }}>{submittedResults.length} result{submittedResults.length !== 1 ? 's' : ''} saved for {new Date(testDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+
+        {prResults.length > 0 && (
+          <div style={{ background: 'rgba(0,255,136,0.1)', borderRadius: 12, padding: 24, border: '1px solid rgba(0,255,136,0.4)', marginBottom: 16 }}>
+            <h2 style={{ margin: '0 0 16px 0', color: '#00ff88', fontSize: 22 }}>🏆 New PRs — {prResults.length} athlete{prResults.length !== 1 ? 's' : ''}</h2>
+            {prResults.map((r, i) => (
+              <div key={i} style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>{r.athlete} <span style={{ color: '#888', fontWeight: 400, fontSize: 14 }}>— {r.test}</span></span>
+                <span style={{ color: '#00ff88', fontWeight: 800, fontSize: 18 }}>
+                  {isFeetInchesTest(r.testId) ? formatFeetInches(r.value) : Math.round(r.value)} {!isFeetInchesTest(r.testId) && r.unit}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {nonPRResults.length > 0 && (
+          <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: 24, border: '1px solid rgba(255,255,255,0.1)', marginBottom: 24 }}>
+            <h3 style={{ margin: '0 0 12px 0', color: '#aaa', fontSize: 16 }}>Other Results</h3>
+            {nonPRResults.map((r, i) => (
+              <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between' }}>
+                <span><span style={{ fontWeight: 600 }}>{r.athlete}</span> — {r.test}</span>
+                <span style={{ color: '#00d4ff' }}>
+                  {isFeetInchesTest(r.testId) ? formatFeetInches(r.value) : Math.round(r.value)} {!isFeetInchesTest(r.testId) && r.unit}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button onClick={startNextGroup} style={{ flex: 1, padding: '20px 32px', background: 'linear-gradient(135deg, #00d4ff 0%, #0099cc 100%)', border: 'none', borderRadius: 12, color: '#0a1628', fontSize: 20, fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: 2 }}>
+            ➕ Start Next Group
+          </button>
+        </div>
+        <p style={{ textAlign: 'center', marginTop: 12, color: '#555', fontSize: 13 }}>Need to fix an entry? Go to ⚙️ Manage to edit or delete results.</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -387,11 +458,15 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
         ))}
         {anyStrength && (
           <div style={{ marginTop: 16 }}>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>Strength Unit</label>
+            {/* FIX 1: Toggle label updated + note about storage */}
+            <label style={{ display: 'block', marginBottom: 8, fontSize: 14, color: '#aaa' }}>
+              Strength Unit <span style={{ color: '#555', fontSize: 12 }}>(always stored & displayed as lbs)</span>
+            </label>
             <div style={{ display: 'flex', gap: 8, width: 200 }}>
               <button onClick={() => setUseKg(false)} style={{ flex: 1, padding: '10px', background: !useKg ? '#00d4ff' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8, color: !useKg ? '#0a1628' : '#fff', fontWeight: 600, cursor: 'pointer' }}>LBS</button>
               <button onClick={() => setUseKg(true)} style={{ flex: 1, padding: '10px', background: useKg ? '#00d4ff' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 8, color: useKg ? '#0a1628' : '#fff', fontWeight: 600, cursor: 'pointer' }}>KG</button>
             </div>
+            {useKg && <div style={{ marginTop: 8, fontSize: 12, color: '#00d4ff' }}>⚡ Entering in kg — will auto-convert to lbs on save</div>}
           </div>
         )}
       </div>
@@ -405,11 +480,19 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
 
           {athleteRows.length > 0 && (
             <div style={{ overflowX: 'auto' }}>
+              {/* FIX 1: Column header shows kg or lbs based on toggle */}
               <div style={{ display: 'flex', gap: 8, padding: '0 0 8px 0', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 8, minWidth: 'fit-content' }}>
                 <div style={{ minWidth: 140, fontSize: 12, color: '#00d4ff', textTransform: 'uppercase', letterSpacing: 1 }}>Athlete</div>
                 {selectedTests.map(tid => {
                   const t = getTestById(tid);
-                  return <div key={tid} style={{ minWidth: isFeetInchesTest(tid) ? 130 : 100, flex: 1, fontSize: 11, color: '#00d4ff', textTransform: 'uppercase', letterSpacing: 1, textAlign: 'center' }}>{t ? t.name : tid}</div>;
+                  // FIX 1: show kg label in header when kg mode is on for strength tests
+                  const headerUnit = t && t.allowKg && useKg ? 'kg' : '';
+                  return (
+                    <div key={tid} style={{ minWidth: isFeetInchesTest(tid) ? 130 : 100, flex: 1, fontSize: 11, color: '#00d4ff', textTransform: 'uppercase', letterSpacing: 1, textAlign: 'center' }}>
+                      {t ? t.name : tid}
+                      {headerUnit && <span style={{ color: '#f0a500', display: 'block', fontSize: 10 }}>{headerUnit}</span>}
+                    </div>
+                  );
                 })}
                 <div style={{ width: 32 }}></div>
               </div>
@@ -426,14 +509,28 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
                       const t = getTestById(tid);
                       const pr = getPR(row.athleteId, tid);
                       const useFeetInches = isFeetInchesTest(tid);
+                      // FIX 1: show PR in correct unit — PR is stored as lbs, show as kg if in kg mode
+                      const prDisplay = pr !== null
+                        ? (t && t.allowKg && useKg ? Math.round(pr / 2.205) + ' kg' : (useFeetInches ? formatFeetInches(pr) : pr + ' ' + (t ? t.unit : '')))
+                        : null;
+                      // FIX 1: placeholder reflects current input unit
+                      const inputPlaceholder = t && t.allowKg && useKg ? 'kg' : (t ? t.unit : 'val');
                       return (
                         <div key={tid} style={{ minWidth: useFeetInches ? 130 : 100, flex: 1 }}>
                           {useFeetInches ? (
                             <FeetInchesInput value={row.values[tid]} onChange={(val) => updateValue(rowIndex, tid, val)} />
                           ) : (
-                            <input type="number" step="0.01" placeholder={t ? t.unit : 'val'} value={row.values[tid] || ''} onChange={(e) => updateValue(rowIndex, tid, e.target.value)} onWheel={preventScrollChange} style={{ width: '100%', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: '#fff', fontSize: 14, textAlign: 'center' }} />
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder={inputPlaceholder}
+                              value={row.values[tid] || ''}
+                              onChange={(e) => updateValue(rowIndex, tid, e.target.value)}
+                              onWheel={preventScrollChange}
+                              style={{ width: '100%', padding: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: '#fff', fontSize: 14, textAlign: 'center' }}
+                            />
                           )}
-                          {pr !== null && <div style={{ fontSize: 10, color: '#666', textAlign: 'center', marginTop: 2 }}>PR: {useFeetInches ? formatFeetInches(pr) : pr}</div>}
+                          {prDisplay !== null && <div style={{ fontSize: 10, color: '#666', textAlign: 'center', marginTop: 2 }}>PR: {prDisplay}</div>}
                         </div>
                       );
                     })}
@@ -449,18 +546,6 @@ function TestEntryPage({ athletes, logResults, getPR, getAthleteById }) {
 
       {selectedTests.length > 0 && athleteRows.length > 0 && (
         <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: '20px 32px', background: submitting ? '#555' : 'linear-gradient(135deg, #00ff88 0%, #00cc6a 100%)', border: 'none', borderRadius: 12, color: '#0a1628', fontSize: 20, fontWeight: 800, cursor: submitting ? 'wait' : 'pointer', textTransform: 'uppercase', letterSpacing: 2, boxShadow: '0 4px 20px rgba(0,255,136,0.3)' }}>{submitting ? 'Saving...' : '✓ Submit All Results'}</button>
-      )}
-
-      {submittedResults.length > 0 && (
-        <div style={{ marginTop: 24, background: 'rgba(0,255,136,0.1)', borderRadius: 12, padding: 24, border: '1px solid rgba(0,255,136,0.3)' }}>
-          <h3 style={{ margin: '0 0 16px 0', color: '#00ff88' }}>✓ Just Logged</h3>
-          {submittedResults.map((r, i) => (
-            <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between' }}>
-              <span><span style={{ fontWeight: 600 }}>{r.athlete}</span> — {r.test}</span>
-              <span>{isFeetInchesTest(r.testId) ? formatFeetInches(r.value) : r.value} {!isFeetInchesTest(r.testId) && r.unit} {r.isPR && <span style={{ color: '#00ff88', fontWeight: 700 }}>🏆 NEW PR!</span>}</span>
-            </div>
-          ))}
-        </div>
       )}
     </div>
   );
@@ -768,7 +853,7 @@ function RecentPRsPage({ athletes, results, getAthleteById }) {
                   <div style={{ fontWeight: 600, fontSize: 16 }}>{a ? `${a.first_name} ${a.last_name}` : 'Unknown'}</div>
                   <div style={{ color: '#888', fontSize: 13 }}>{age && `${age} yrs • `}{t?.name} • {dateStr}</div>
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#00ff88' }}>{useFtIn ? formatFeetInches(parseFloat(r.converted_value)) : r.converted_value} <span style={{ fontSize: 13, fontWeight: 500, color: '#888' }}>{!useFtIn && (t?.displayUnit || t?.unit)}</span></div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#00ff88' }}>{useFtIn ? formatFeetInches(parseFloat(r.converted_value)) : Math.round(r.converted_value)} <span style={{ fontSize: 13, fontWeight: 500, color: '#888' }}>{!useFtIn && (t?.displayUnit || t?.unit)}</span></div>
               </div>
             );
           })}
